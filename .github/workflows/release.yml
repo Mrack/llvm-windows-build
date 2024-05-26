@@ -1,0 +1,70 @@
+name: release
+
+env:
+  VERSION: 12.0.1
+  
+concurrency:
+  group: release-${{ github.head_ref }}
+  cancel-in-progress: true
+on:
+  push:
+    branch:
+      - main
+jobs:
+  create_release:
+    name: Create release
+    runs-on: windows-latest
+    outputs:
+      upload_url: ${{ steps.create_release.outputs.upload_url }}
+    steps:
+    - name: Create Release
+      id: create_release
+      uses: actions/create-release@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        tag_name: llvmorg-${{ env.VERSION }}
+        release_name: llvmorg-${{ env.VERSION }}
+        draft: true
+        prerelease: true
+
+  upload_assets:
+    name: Build llvm on Windows
+    needs: create_release
+    runs-on: windows-latest
+    steps:
+    - name: Checkout by pushing tags
+      if: ${{ github.event_name == 'push' }}
+      run: git clone --branch llvmorg-${{ env.VERSION }} --depth 1 https://github.com/llvm/llvm-project.git
+    - name: Install dependency
+      uses: crazy-max/ghaction-chocolatey@v1
+      with:
+        args: install cmake ninja vswhere
+
+    - uses: GuillaumeFalourd/setup-windows10-sdk-action@v1
+      with:
+        sdk-version: 19041
+    - name: Build llvm
+      run: |
+        $vsPath = (vswhere -latest -property installationPath)
+        Import-Module (Join-Path $vsPath "Common7\Tools\Microsoft.VisualStudio.DevShell.dll")
+        Enter-VsDevShell -VsInstallPath $vsPath -SkipAutomaticLocation -DevCmdArguments "-arch=x64 -host_arch=x64 -winsdk=10.0.19041.0"
+        $Env:CC = "clang-cl"
+        $Env:CXX = "clang-cl"
+        $cmake_sys_ver = "10.0.19041.0"
+        cmake -Bbuild -GNinja "-DCMAKE_SYSTEM_VERSION=$cmake_sys_ver" -DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreadedDLL -DCMAKE_BUILD_TYPE=Release -DCPACK_GENERATOR=ZIP "-DCMAKE_INSTALL_PREFIX=$pwd\\prefix" -DLLVM_TARGETS_TO_BUILD="X86" -DLLVM_ENABLE_PROJECTS="clang" -DLLVM_ENABLE_DIA_SDK=OFF llvm-project\\llvm
+        cmake --build build
+
+    - name: Package llvm
+      run: |
+        cmake --build build --target package
+
+    - name: Upload LLVM zip package
+      uses: actions/upload-release-asset@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        upload_url: ${{ needs.create_release.outputs.upload_url }}
+        asset_path: build/LLVM-${{ env.VERSION }}-win64.zip
+        asset_name: LLVM-${{ env.VERSION }}-win64.zip
+        asset_content_type: application/zip
