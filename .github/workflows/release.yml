@@ -53,7 +53,7 @@ jobs:
         $Env:CXX = "clang-cl"
         $cmake_sys_ver = "10.0.19041.0"
         cmake -Bbuild -GNinja "-DCMAKE_SYSTEM_VERSION=$cmake_sys_ver" -DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreadedDLL -DCMAKE_BUILD_TYPE=Release -DCPACK_GENERATOR=ZIP "-DCMAKE_INSTALL_PREFIX=$pwd\\prefix" -DLLVM_TARGETS_TO_BUILD="X86" -DLLVM_ENABLE_PROJECTS="clang" -DLLVM_ENABLE_DIA_SDK=OFF llvm-project\\llvm
-        cmake --build build
+        cmake --build build -- -j $(nproc)
 
     - name: Package llvm
       run: |
